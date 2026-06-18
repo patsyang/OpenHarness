@@ -131,6 +131,19 @@ def _stage_for_tool(tool_name: str) -> str | None:
     normalized = tool_name.strip().lower().replace("-", "_")
     if normalized in {"web_search", "web_fetch"}:
         return "searching"
+    if normalized in {
+        "knowledge_context",
+        "knowledge_query",
+        "query_bundle",
+        "query_bundles",
+    }:
+        return "searching_knowledge"
+    if normalized in {"grep", "glob", "list_dir", "ls", "find"}:
+        return "searching_files"
+    if normalized in {"read_file", "read", "cat"}:
+        return "reading_files"
+    if normalized == "skill":
+        return "using_skill"
     if normalized == "image_generation":
         return "generating_image"
     if normalized in {"shell", "bash", "python", "run_command"}:
@@ -142,6 +155,14 @@ def _stage_text(stage: str, content: str) -> str:
     zh = _prefers_chinese(content)
     if stage == "searching":
         return "正在检索资料..." if zh else "Searching..."
+    if stage == "searching_knowledge":
+        return "正在检索知识库..." if zh else "Searching the knowledge base..."
+    if stage == "searching_files":
+        return "正在查找相关资料..." if zh else "Finding relevant materials..."
+    if stage == "reading_files":
+        return "正在阅读资料..." if zh else "Reading materials..."
+    if stage == "using_skill":
+        return "正在调用专业能力..." if zh else "Using a specialized capability..."
     if stage == "generating_image":
         return "正在生成图片..." if zh else "Generating image..."
     if stage == "processing_files":

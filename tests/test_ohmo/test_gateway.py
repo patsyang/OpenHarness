@@ -1968,7 +1968,7 @@ async def test_gateway_bridge_debug_mode_keeps_raw_tool_hints():
 
 
 @pytest.mark.asyncio
-async def test_gateway_bridge_user_mode_hides_internal_file_tool_hints(tmp_path):
+async def test_gateway_bridge_user_mode_summarizes_internal_file_tool_hints(tmp_path):
     bus = MessageBus()
     skill_path = tmp_path / "skills" / "pat-infographic" / "SKILL.md"
 
@@ -2000,7 +2000,9 @@ async def test_gateway_bridge_user_mode_hides_internal_file_tool_hints(tmp_path)
     task = asyncio.create_task(bridge.run())
     try:
         await bus.publish_inbound(InboundMessage(channel="feishu", sender_id="u1", chat_id="c1", content="请画图"))
-        outbound = await asyncio.wait_for(bus.consume_outbound(), timeout=1.0)
+        first = await asyncio.wait_for(bus.consume_outbound(), timeout=1.0)
+        second = await asyncio.wait_for(bus.consume_outbound(), timeout=1.0)
+        third = await asyncio.wait_for(bus.consume_outbound(), timeout=1.0)
     finally:
         bridge.stop()
         task.cancel()
@@ -2009,8 +2011,63 @@ async def test_gateway_bridge_user_mode_hides_internal_file_tool_hints(tmp_path)
         except asyncio.CancelledError:
             pass
 
-    assert outbound.content == "Done"
-    assert str(tmp_path) not in outbound.content
+    assert first.content == "正在阅读资料..."
+    assert second.content == "正在查找相关资料..."
+    assert third.content == "Done"
+    for outbound in (first, second, third):
+        assert str(tmp_path) not in outbound.content
+
+
+@pytest.mark.asyncio
+async def test_gateway_bridge_user_mode_summarizes_knowledge_and_skill_tool_hints():
+    bus = MessageBus()
+
+    class FakeRuntimePool:
+        async def stream_message(self, message, session_key):
+            yield SimpleNamespace(
+                kind="tool_hint",
+                text='🛠️ Using knowledge_context: {"domain": "pm_udsp", "question": "模块"}',
+                metadata={
+                    "_progress": True,
+                    "_tool_hint": True,
+                    "_tool_name": "knowledge_context",
+                    "_session_key": session_key,
+                },
+            )
+            yield SimpleNamespace(
+                kind="tool_hint",
+                text='🛠️ Using skill: {"name": "knowledge-reader"}',
+                metadata={
+                    "_progress": True,
+                    "_tool_hint": True,
+                    "_tool_name": "skill",
+                    "_session_key": session_key,
+                },
+            )
+            yield SimpleNamespace(kind="final", text="Done", metadata={"_session_key": session_key})
+
+    bridge = OhmoGatewayBridge(bus=bus, runtime_pool=FakeRuntimePool())
+    task = asyncio.create_task(bridge.run())
+    try:
+        await bus.publish_inbound(
+            InboundMessage(channel="feishu", sender_id="u1", chat_id="c1", content="查知识库")
+        )
+        first = await asyncio.wait_for(bus.consume_outbound(), timeout=1.0)
+        second = await asyncio.wait_for(bus.consume_outbound(), timeout=1.0)
+        third = await asyncio.wait_for(bus.consume_outbound(), timeout=1.0)
+    finally:
+        bridge.stop()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    assert first.content == "正在检索知识库..."
+    assert second.content == "正在调用专业能力..."
+    assert third.content == "Done"
+    assert "pm_udsp" not in first.content
+    assert "knowledge-reader" not in second.content
 
 
 @pytest.mark.asyncio
